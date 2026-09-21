@@ -16,12 +16,17 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+      # No `registry-url`: it writes an .npmrc line reading the auth token from
+      # NODE_AUTH_TOKEN, and with no token to read it writes the placeholder
+      # setup-node ships. npm then authenticates with that, is refused, and
+      # never reaches the OIDC exchange -- a 404 on the publish, which is what
+      # npm returns rather than say whether the package exists.
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
       # The runner's npm predates trusted publishing, which landed in 11.5.1.
       - run: npm install -g npm@latest
+      - run: npm --version
       - run: npm ci
       - run: npm test
       - run: npm run build
