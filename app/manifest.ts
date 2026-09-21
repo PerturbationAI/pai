@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Pi Web",
-    short_name: "Pi Web",
+    name: "PAI",
+    short_name: "PAI",
     description: "Local web interface for the pi coding agent",
     start_url: "/",
     scope: "/",
@@ -15,13 +15,13 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "en",
     icons: [
       {
-        src: "/icons/icon-192.png",
+        src: `/icons/icon-192.png?v=${process.env.NEXT_PUBLIC_PAI_BUILD ?? "dev"}`,
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/icon-512.png",
+        src: `/icons/icon-512.png?v=${process.env.NEXT_PUBLIC_PAI_BUILD ?? "dev"}`,
         sizes: "512x512",
         type: "image/png",
         purpose: "any",

@@ -1,21 +1,21 @@
 {
-  "name": "@agegr/pi-web",
-  "version": "0.9.1",
-  "description": "Web UI for the pi coding agent",
-  "homepage": "https://github.com/agegr/pi-web#readme",
+  "name": "@perturbationai/pai",
+  "version": "0.1.0",
+  "description": "A phone-first build of pi-web.",
+  "homepage": "https://github.com/PerturbationAI/pai#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agegr/pi-web.git"
+    "url": "git+https://github.com/PerturbationAI/pai.git"
   },
   "bugs": {
-    "url": "https://github.com/agegr/pi-web/issues"
+    "url": "https://github.com/PerturbationAI/pai/issues"
   },
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
   },
   "bin": {
-    "pi-web": "bin/pi-web.js"
+    "pai": "bin/pi-web.js"
   },
   "files": [
     "bin",
@@ -37,8 +37,7 @@
     "lint": "eslint .",
     "test:terminal": "node e2e/terminal.mjs",
     "test:e2e": "node e2e/run.mjs",
-    "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\""
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

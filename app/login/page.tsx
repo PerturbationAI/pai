@@ -41,9 +41,14 @@ function LoginForm() {
     <main className="web-login-page">
       <div className="web-login-shell">
         <header className="web-login-brand">
-          <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority />
+          {/* Unoptimized on purpose. The optimizer's URL is the same whichever icon
+              is behind it — `url`, `w` and `q` do not change when the file does — and
+              it answers with a four-hour Cache-Control, so a CDN holds the previous
+              icon at that URL for four hours after a new one ships. The raw file
+              answers with max-age=0 and revalidates. */}
+          <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority unoptimized />
           <div>
-            <h1>Pi Web</h1>
+            <h1 className="pai-wordmark">PAI</h1>
             <p>{t("auth.prompt")}</p>
           </div>
         </header>

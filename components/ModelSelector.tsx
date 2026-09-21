@@ -62,9 +62,10 @@ export function ModelSelector({
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number } | null>(null);
+  const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number; viewportHeight?: number } | null>(null);
   const [filter, setFilter] = useState("");
   const locked = disabled || busy;
   const sortedOptions = useMemo(() => [...options].sort(compareModelOptions), [options]);
@@ -78,9 +79,60 @@ export function ModelSelector({
     else modelsByProvider.push({ provider: option.provider, options: [option] });
   }
 
+  const currentOption = value
+    ? sortedOptions.find((option) => option.modelId === value.modelId && option.provider === value.provider)
+    : undefined;
+  // A selection that is not in the list any more — a provider renamed or
+  // removed since the session recorded it. Say so by asking for a model,
+  // exactly as a new session does, rather than naming one that no longer
+  // exists. Only once there is a list to be absent from: an empty list means
+  // the models have not loaded yet, and the recorded id is still the best
+  // thing to show.
+  const selectionIsGone = Boolean(value) && !currentOption && sortedOptions.length > 0;
+  const chooseLabel = emptyLabel ?? (sortedOptions.length > 0 ? "Select model" : "No models");
   const currentName = selectedLabel ?? (value
-    ? sortedOptions.find((option) => option.modelId === value.modelId && option.provider === value.provider)?.name ?? value.modelId
-    : emptyLabel ?? (sortedOptions.length > 0 ? "Select model" : "No models"));
+    ? (currentOption?.name ?? (selectionIsGone ? chooseLabel : value.modelId))
+    : chooseLabel);
+
+  // The anchor is read once, when the panel opens, and `position: fixed`
+  // paints from that single reading. Anything that moves the trigger
+  // afterwards — a keyboard opening under it, the transcript resizing around
+  // it — leaves the panel sitting where the trigger no longer is. Follow it
+  // for as long as the panel is open.
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      setAnchorRect((current) => (
+        current
+        && current.top === rect.top && current.bottom === rect.bottom
+        && current.left === rect.left && current.right === rect.right
+        && current.width === rect.width && current.viewportHeight === height
+          ? current
+          : { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width, viewportHeight: height }
+      ));
+    };
+    sync();
+    const viewport = window.visualViewport;
+    // `true` so a scroll inside the transcript counts, not only the window's.
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync);
+    viewport?.addEventListener("resize", sync);
+    viewport?.addEventListener("scroll", sync);
+    // The keyboard can move the trigger without announcing it, same as it can
+    // resize the app without announcing that.
+    const poll = window.setInterval(sync, 250);
+    return () => {
+      window.removeEventListener("scroll", sync, true);
+      window.removeEventListener("resize", sync);
+      viewport?.removeEventListener("resize", sync);
+      viewport?.removeEventListener("scroll", sync);
+      window.clearInterval(poll);
+    };
+  }, [open]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -161,6 +213,7 @@ export function ModelSelector({
       }}
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -206,7 +259,7 @@ export function ModelSelector({
             <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
           </svg>
         )}
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentName}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{!selectedLabel && !selectionIsGone && value?.provider ? <span className="pai-model-provider">{value.provider} • </span> : null}{currentName}</span>
         {variant === "field" && (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
             <polyline points="6 9 12 15 18 9" />
@@ -215,17 +268,30 @@ export function ModelSelector({
       </button>
 
       {open && anchorRect && (() => {
-        const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+        // Two heights, and they are not interchangeable. What is *visible* is
+        // the visual viewport, which a keyboard shrinks — that decides which
+        // way there is room to open. Where `position: fixed` measures from is
+        // the *layout* viewport, which a keyboard does not change — and
+        // anchorRect is in those same coordinates, so the offset must use it.
+        // Mixing them drops the panel by the height of the keyboard.
+        const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
+        const layoutHeight = window.innerHeight;
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
         const spaceAbove = anchorRect.top - 8;
-        const spaceBelow = viewportHeight - anchorRect.bottom - 8;
+        const spaceBelow = visibleHeight - anchorRect.bottom - 8;
         const openAbove = placement === "up" || spaceAbove > spaceBelow;
-        const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6));
+        const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, visibleHeight * 0.6));
         const verticalPosition = openAbove
-          ? { bottom: viewportHeight - anchorRect.top + 6 }
+          ? { bottom: layoutHeight - anchorRect.top + 6 }
           : { top: anchorRect.bottom + 6 };
+        // On a phone this used to span the viewport less 8px on each side,
+        // which is nearly the whole width for a list of model names. It hangs
+        // off the button instead, the way it already does on a pointer
+        // device: never narrower than the button, never wider than its
+        // content, and stopping the same distance from the edge the composer
+        // does.
         const horizontalPosition: CSSProperties = isMobile
-          ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
+          ? { left: anchorRect.left, width: "max-content", minWidth: anchorRect.width, maxWidth: Math.max(anchorRect.width, viewportWidth - anchorRect.left - 16) }
           : { left: anchorRect.left, width: "max-content", minWidth: anchorRect.width, maxWidth: Math.max(anchorRect.width, viewportWidth - anchorRect.left - 8) };
 
         return (
@@ -233,6 +299,7 @@ export function ModelSelector({
             ref={panelRef}
             role="listbox"
             aria-label={ariaLabel}
+            className="pai-model-panel"
             style={{
               position: "fixed",
               ...verticalPosition,
@@ -289,7 +356,7 @@ export function ModelSelector({
               ) : modelsByProvider.map((group, index) => (
                 <div key={group.provider}>
                   {modelsByProvider.length > 1 && (
-                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: "uppercase" }}>
+                    <div className="pai-model-group" style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: 10, fontWeight: 600, letterSpacing: 0 }}>
                       {group.provider}
                     </div>
                   )}
@@ -318,6 +385,7 @@ function ModelOptionButton({ active, label, onClick }: { active: boolean; label:
       role="option"
       aria-selected={active}
       onClick={onClick}
+      className="pai-model-option"
       style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px", border: "none", background: active ? "var(--bg-selected)" : "none", color: active ? "var(--text)" : "var(--text-muted)", cursor: "pointer", fontSize: 12, fontWeight: active ? 600 : 400, textAlign: "left", whiteSpace: "nowrap" }}
       onMouseEnter={(event) => { if (!active) event.currentTarget.style.background = "var(--bg-hover)"; }}
       onMouseLeave={(event) => { if (!active) event.currentTarget.style.background = "none"; }}

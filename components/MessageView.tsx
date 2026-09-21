@@ -195,6 +195,9 @@ interface Props {
   onEditContent?: (message: UserMessage) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  /** Question to answer, in seconds. The answer's own gap is near zero:
+   *  it is written milliseconds after the tool result before it. */
+  turnSeconds?: number;
   sessionId?: string;
   /**
    * Files this turn wrote, derived by the caller from the whole turn's
@@ -270,12 +273,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp, prevTimestamp, turnSeconds, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} turnSeconds={turnSeconds} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -307,6 +310,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onEditContent === next.onEditContent
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
+    && prev.turnSeconds === next.turnSeconds
     && prev.writtenFiles === next.writtenFiles
     && prev.sessionId === next.sessionId;
 });
@@ -603,6 +607,7 @@ function AssistantMessageView({
   onOpenSession,
   showTimestamp,
   prevTimestamp,
+  turnSeconds,
   sessionId,
   entryId,
   searchBlock,
@@ -617,6 +622,7 @@ function AssistantMessageView({
   onOpenSession?: (sessionId: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  turnSeconds?: number;
   sessionId?: string;
   entryId?: string;
   searchBlock?: AssistantContentBlock;
@@ -628,6 +634,9 @@ function AssistantMessageView({
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming })), [message.content, isStreaming]);
   const blocks = useMemo(() => blockItems.map(({ block }) => block), [blockItems]);
+  // The thinking block the turn is currently writing; -1 when there is none.
+  const newestThinkingIndex = useMemo(() => blockItems
+    .reduce((last, { block, originalIndex }) => (block.type === "thinking" ? originalIndex : last), -1), [blockItems]);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -758,6 +767,7 @@ function AssistantMessageView({
     >
       {/* Model label */}
       <div
+        className="pai-model-label"
         style={{
           fontSize: 11,
           color: "var(--text-dim)",
@@ -800,7 +810,7 @@ function AssistantMessageView({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} autoExpand={isStreaming ? originalIndex === newestThinkingIndex : undefined} />
         ))}
       </div>
 
@@ -834,7 +844,7 @@ function AssistantMessageView({
       }}>
         {message.usage && !isStreaming && (
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {formatUsage(message.usage)}
+            {formatUsage(message.usage, turnSeconds ?? thinkingDurationFromFile)}
           </div>
         )}
         {textContent && !isStreaming && (
@@ -878,12 +888,12 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
+function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex, autoExpand }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number; autoExpand?: boolean }) {
   if (block.type === "text") {
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} autoExpand={autoExpand} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -898,12 +908,14 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, autoExpand }: {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
+  /** While a turn is streaming, the newest thinking block is open and the rest are not. */
+  autoExpand?: boolean;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
@@ -920,6 +932,14 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
     window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
     return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
   }, []);
+
+  // Follow the streaming turn: open while this is the block being written, shut
+  // once a tool call has moved the turn on to the next one. Undefined outside a
+  // streaming turn, which leaves the preference and any manual toggle alone.
+  useEffect(() => {
+    if (autoExpand === undefined) return;
+    setExpanded(autoExpand);
+  }, [autoExpand]);
 
   // Load deferred history content whenever the block is expanded.
   // loadThinkingContent() memoizes in-flight promises and drops failed ones
@@ -953,7 +973,18 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
-    <div style={{
+    <div
+      className="pai-thinking-block"
+      onClick={(event) => {
+        // The button handles its own clicks, and a click that ends a text
+        // selection is the reader highlighting the thinking, not asking to
+        // close it.
+        if ((event.target as HTMLElement).closest("button")) return;
+        if (window.getSelection()?.isCollapsed === false) return;
+        setExpanded((v) => !v);
+      }}
+      style={{
+      cursor: "pointer",
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
       border: "1px solid var(--border)",
       borderRadius: 7,
@@ -967,6 +998,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         type="button"
         aria-expanded={expanded}
         aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
+        className="pai-thinking-toggle"
         title={t("i18n.thinking")}
         onClick={() => setExpanded((v) => !v)}
         style={{
@@ -986,7 +1018,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
           textAlign: "left",
         }}
       >
-        <ThinkingIcon active={expanded} />
+        <ThinkingIcon thinking={autoExpand === true} />
         {!expanded && (
           <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
@@ -1751,12 +1783,18 @@ function formatUsage(usage: {
   cacheRead: number;
   cacheWrite: number;
   cost: { total: number };
-}): string {
+}, durationSeconds?: number): string {
   const parts = [];
   if (usage.input) parts.push(`${usage.input.toLocaleString()} in`);
   if (usage.output) parts.push(`${usage.output.toLocaleString()} out`);
-  if (usage.cacheRead) parts.push(`${usage.cacheRead.toLocaleString()} cache R`);
-  if (usage.cacheWrite) parts.push(`${usage.cacheWrite.toLocaleString()} cache W`);
+  // "cache R" / "cache W" read as initials of nothing in particular. The words
+  // cost a few characters on a line that already wraps freely.
+  if (usage.cacheRead) parts.push(`${usage.cacheRead.toLocaleString()} cache read`);
+  if (usage.cacheWrite) parts.push(`${usage.cacheWrite.toLocaleString()} cache write`);
+  // How long the turn took to produce. Nothing else on screen says it: the
+  // thinking block times itself and each tool call times itself, but the answer
+  // does not.
+  if (durationSeconds) parts.push(`${durationSeconds}s`);
   if (usage.cost?.total) parts.push(`$${usage.cost.total.toFixed(4)}`);
   return parts.join(" · ");
 }

@@ -95,7 +95,13 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     resizeObserver.observe(container);
 
     const connect = () => {
-      if (disposed || exited || !navigator.onLine) return;
+      // Not `navigator.onLine`. It is advisory, and an installed iOS web app
+      // can report itself offline while every other request on the page is
+      // going through -- which left this returning in silence, with no error
+      // and no retry, and the panel sitting on "connecting" for good. A real
+      // outage still surfaces: EventSource fails, `onerror` runs, and the
+      // online/offline listeners below reconnect when the state changes.
+      if (disposed || exited) return;
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {

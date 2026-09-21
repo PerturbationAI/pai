@@ -73,6 +73,13 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_PI_VERSION: piVersion,
+    // The service worker names its cache after whatever is in its own URL, and
+    // that has been the package version — which a patched build never moves.
+    // So anything precached (the icons, the offline page) is served from the
+    // first build that ever cached it, on every device that cached it, for
+    // good. A value that changes per production build gives each build its own
+    // cache, and the worker's activate handler drops the ones before it.
+    NEXT_PUBLIC_PAI_BUILD: process.env.NODE_ENV === "production" ? String(Date.now()) : "dev",
   },
 };
 
