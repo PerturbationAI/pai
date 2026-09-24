@@ -29,6 +29,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
+import { paiText } from "@/lib/pai-strings";
 
 export { filterModelOptions } from "./ModelSelector";
 
@@ -561,7 +562,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   cwd,
   compact = false,
 }: Props, ref) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
@@ -1576,6 +1577,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     <fieldset
       disabled={builtinCommandPending}
       aria-busy={builtinCommandPending}
+      className="pai-composer"
       style={{
         flexShrink: 0,
         minWidth: 0,
@@ -2109,6 +2111,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             );
           })()}
           <div
+            className="pai-composer-field"
             style={{
               minWidth: 0,
               display: "flex",
@@ -2156,6 +2159,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               isStreaming && (onSteer || onFollowUp)
                 ? t("chat.steerPlaceholder")
                 : isStreaming ? t("chat.agentPlaceholder")
+                : isMobile ? paiText(locale, "composerPlaceholder")
                 : t("chat.messagePlaceholder")
             }
             rows={1}
@@ -2229,9 +2233,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               )}
             </div>
           ) : (
+            <>
             <button
               onClick={handleSend}
               disabled={!value.trim() && !attachedImages.length}
+              className="pai-send"
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
@@ -2255,6 +2261,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </svg>
               {t("chat.send")}
             </button>
+            </>
           )}
           </div>
         </div>
@@ -2333,14 +2340,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {isMobile && (
               <button
                 type="button"
-                 title={controlsMenuOpen ? undefined : t("chat.moreControls")}
-                 aria-label={t("chat.moreControls")}
+                 title={controlsMenuOpen ? t("chat.close") : t("chat.moreControls")}
+                 aria-label={controlsMenuOpen ? t("chat.close") : t("chat.moreControls")}
                 aria-expanded={controlsMenuOpen}
-                aria-hidden={controlsMenuOpen || undefined}
-                tabIndex={controlsMenuOpen ? -1 : undefined}
                 onClick={() => {
-                  setControlsMenuOpen(true);
+                  // Toggles, the way the bar at the top of the screen does.
+                  // It used to only open, and closing was a button inside the
+                  // panel; `aria-hidden` and `tabIndex: -1` went with that,
+                  // and both have to go now that it stays reachable.
+                  setControlsMenuOpen((open) => !open);
                 }}
+                className="pai-more-controls"
                 style={{
                   display: "flex",
                   alignItems: "center",

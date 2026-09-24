@@ -290,7 +290,9 @@ try {
     await page.locator("strong").filter({ hasText: "E2E markdown" }).waitFor();
     await page.locator("pre").filter({ hasText: "console.log('E2E code');" }).waitFor();
     await page.getByText("E2E final answer", { exact: true }).waitFor();
-    const processDetails = page.getByRole("button", { name: /^Process details/ });
+    // The group's line starts with the counts that differ between groups, not
+    // with the words "Process details", which said the same thing on every one.
+    const processDetails = page.getByRole("button", { name: /^\d+ message/ });
     const thinking = page.getByRole("button", { name: /^Thinking/ });
     assert.equal(await processDetails.count(), 1);
     assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
@@ -300,7 +302,9 @@ try {
     assert.equal(thinkingRequests.length, 0);
     await processDetails.click();
     assert.equal(await thinking.count(), 3);
-    assert.equal(await thinking.last().innerText(), "E2E final reasoning");
+    // A glyph says the thinking state -- a brain, or an exploding head while it
+    // is still being written -- and stands before the preview it labels.
+    assert.match(await thinking.last().innerText(), /E2E final reasoning$/);
     assert.equal(thinkingRequests.length, 0);
     for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
       await thinking.nth(index).click();
@@ -358,7 +362,7 @@ try {
       const olderMessage = page.locator("[data-entry-id='e4920']");
       const olderOffset = await positionForReading(olderMessage);
       await selectSession("Render **E2E markdown**", "user");
-      const process = page.getByRole("button", { name: /process details/i });
+      const process = page.getByRole("button", { name: /^\d+ message/ });
       await process.click();
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);

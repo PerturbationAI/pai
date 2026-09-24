@@ -11,7 +11,14 @@ export async function checkFilePanel(page, filePath) {
   if (await showSidebar.isVisible()) await showSidebar.click();
   // The DOM title normalizes Windows paths to forward slashes
   // (lib/file-paths.ts normalizeFilePathSlashes), so match in that form.
-  await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
+  const file = page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true });
+  // Where the drawer is the whole screen the file explorer starts collapsed, so
+  // that the session list has the drawer to itself. Open it before looking for
+  // a file in it.
+  if (!(await file.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Explorer", exact: true }).click();
+  }
+  await file.click();
   const panel = page.locator("#file-panel");
   const iframe = panel.locator("iframe");
   await iframe.waitFor();

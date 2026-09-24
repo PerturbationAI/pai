@@ -62,6 +62,9 @@ import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { usePaiEdgeSwipe } from "@/lib/pai-edge-swipe";
+import { isInstalledApp } from "@/lib/pai-display-mode";
+import { canHover } from "@/lib/pai-pointer";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 type AutoNameStatus =
@@ -389,6 +392,10 @@ export function AppShell() {
     }
     setSidebarOpen((open) => !open);
   }, [isMobile]);
+
+  // Dragging in from the left edge opens it, so the drawer is not reachable
+  // only through the control furthest from a thumb.
+  usePaiEdgeSwipe({ enabled: isMobile && !sidebarOpen, onOpen: () => setSidebarOpen(true) });
 
   const handleMobileToolbarMoreToggle = useCallback(() => {
     setSidebarOpen(false);
@@ -790,6 +797,12 @@ export function AppShell() {
 
   const handleNewSession = useCallback((sessionId: string, cwd: string) => {
     invalidateWorkspaceRestore();
+    // Asking for a new session is a choice about where to be, and it has to
+    // outlive this page. `invalidateWorkspaceRestore` only drops a restore
+    // that is already in flight; the workspace's memory still names the
+    // session that was open before, so the next load -- a reopened tab, a
+    // relaunched home-screen app -- restores it and the new session is gone.
+    clearLastOpen(activeProjectKeyRef.current ?? cwd);
     const draftKey = `new:${sessionId}:${cwd}`;
     rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
     activeNewSessionDraftKeyRef.current = draftKey;
@@ -1093,11 +1106,16 @@ export function AppShell() {
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
-    window.open(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const url = `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`;
+    // An installed application has no tab bar to come back through, so a new
+    // window there is a one-way door -- the only exit was force-quitting.
+    // Replacing the page instead leaves history to go back through, which the
+    // control injected into the export uses.
+    if (isInstalledApp()) {
+      window.location.assign(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   }, [selectedSession]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
@@ -1160,7 +1178,7 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - PAI` : "PAI";
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -1704,7 +1722,14 @@ export function AppShell() {
               </span>
             )}
             {mobileContextText && (
-              <span style={{ color: contextColor, flexShrink: 0 }}>
+              <span
+                className="pai-context-ring"
+                style={{
+                  color: contextColor,
+                  flexShrink: 0,
+                  "--pai-context": `${Math.min(100, Math.max(0, contextUsage?.percent ?? 0))}`,
+                } as React.CSSProperties}
+              >
                 {mobileContextText}
               </span>
             )}
@@ -1759,8 +1784,11 @@ export function AppShell() {
     );
   };
 
-  const renderMainFileToggle = (mobile: boolean) => {
-    const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
+  // `inMenu` says the control is rendered inside the expanded menu rather than
+  // behind it, which inverts what "covered" means: it is hidden while the menu
+  // is open only when it sits under the overlay.
+  const renderMainFileToggle = (mobile: boolean, inMenu = false) => {
+    const covered = !inMenu && mobile && isNarrowMobile && mobileToolbarMoreOpen;
     return (
       <button
         type="button"
@@ -1936,12 +1964,13 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div inert={rightPanelFullWidth} className="pai-main-column" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
+        <div ref={topBarRef} className="pai-topbar" style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
         <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
           <button
             onClick={handleSidebarToggle}
+            className="pai-sidebar-toggle"
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
              aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
             style={{
@@ -2008,8 +2037,17 @@ export function AppShell() {
                 </button>
               )}
               {!isNarrowMobile && renderChatToolbarActions(true)}
-              {renderSessionStatsButton(true)}
-              {renderMainFileToggle(true)}
+              <div className="pai-title-row">
+                <button
+                  type="button"
+                  className="pai-session-title"
+                  onClick={() => toggleTopPanel("session")}
+                  disabled={!showChat}
+                >
+                  {selectedSession?.name || selectedSession?.firstMessage?.slice(0, 40) || translate("i18n.newSession")}
+                </button>
+                {renderSessionStatsButton(true)}
+              </div>
               {isNarrowMobile && mobileToolbarMoreOpen && (
                 <div
                   id="mobile-toolbar-actions"
@@ -2031,6 +2069,7 @@ export function AppShell() {
                   }}
                 >
                   {renderChatToolbarActions(true)}
+                  {renderMainFileToggle(true, true)}
                 </div>
               )}
             </div>
@@ -2059,7 +2098,9 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <>
+            <div className="pai-top-panel-backdrop" onClick={() => setActiveTopPanel(null)} />
+            <div className="pai-top-panel" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -2207,6 +2248,12 @@ export function AppShell() {
                             transition: "color 0.12s, border-color 0.12s, background 0.12s",
                           }}
                           onMouseEnter={(e) => {
+                            // A touch fires this too, and the dialog opens under
+                            // the finger: the control beneath it turned accent
+                            // as the panel appeared, which is the blue that
+                            // flashed. Suppressing the tint rather than the
+                            // whole rule keeps the copied state's own accent.
+                            if (!canHover()) return;
                             e.currentTarget.style.color = "var(--accent)";
                             e.currentTarget.style.borderColor = "var(--accent)";
                             e.currentTarget.style.background = "var(--bg-hover)";
@@ -2298,6 +2345,7 @@ export function AppShell() {
                 </div>
               )}
             </div>
+            </>
           )}
 
         </div>

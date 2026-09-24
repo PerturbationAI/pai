@@ -1,6 +1,12 @@
 MIT License
 
-Copyright (c) 2026 agegr
+PAI is a derivative work of pi-web (https://github.com/agegr/pi-web), used and
+redistributed under the MIT License. The notice below is upstream's, reproduced
+in full as that license requires, and it governs the parts of this software that
+originate there. The second copyright line covers the changes carried here.
+
+Copyright (c) 2026 agegr — pi-web, the software this is built from
+Copyright (c) 2026 Perturbation AI — the changes in this repository
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

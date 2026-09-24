@@ -1,184 +1,119 @@
-# Pi Web
+# PAI
 
-[中文文档](./README.zh-CN.md) | [日本語](./README.ja.md) | [Русский](./README.ru.md)
+A phone-first build of [pi-web](https://github.com/agegr/pi-web).
 
-Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). Pi Web uses the same local configuration and session files as pi, so you can browse and resume conversations, run agent turns, configure models and resources, and inspect project files from a browser.
+pi-web runs the [pi](https://github.com/earendil-works/pi) coding agent in a browser —
+sessions, files, git, skills, model configuration — and all of that is upstream's. What it
+did not have is a layout composed for a phone, and it carries a handful of defects that a
+phone runs into first. That is what this build changes, and nothing else.
 
-![Pi Web displaying a pi session with structured Markdown, tool calls, and project navigation](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)
-
-## Features
-
-- **Session workspace**: browse, resume, rename, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
-- **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
-- **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
-- **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
-- **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially and provides a language switcher in the top bar.
-
-## Quick Start
-
-Pi Web requires Node.js 22.19.0 or newer. Check your version with `node --version`, then run:
-
-```bash
-npx @agegr/pi-web@latest
+```sh
+npx @perturbationai/pai
 ```
 
-The CLI opens a browser after the server is ready. If it does not, open [http://127.0.0.1:30141](http://127.0.0.1:30141). Pi Web listens only on `127.0.0.1` by default.
+It serves on `127.0.0.1:30141`. Add it to your home screen and it runs standalone, with
+lock-screen notifications when a session finishes.
 
-If no model provider is configured yet, open the **Models** panel to sign in or add an API key.
-
-To install the `pi-web` command globally:
-
-```bash
-npm install -g @agegr/pi-web@latest
-pi-web
+```sh
+npx @perturbationai/pai --help          # ports, hostname, the PI_WEB_* environment
 ```
 
-To update, stop the running process with `Ctrl+C` and run the same install command again. To uninstall, run `npm uninstall -g @agegr/pi-web`.
+The environment variables are upstream's and unchanged — `PI_WEB_PASSWORD`,
+`PI_WEB_ALLOWED_HOSTS`, `PI_WEB_HOSTNAME` — so anything already configured against pi-web
+keeps working.
 
-## Configuration
+## What is different from pi-web
 
-For port and hostname, command-line options override the corresponding environment variables. Either `--no-open` or `PI_WEB_NO_OPEN=1` disables automatic browser opening. Run `pi-web --help` (or `-h`) to print startup options and exit without starting the server. Unknown options exit with an error.
+Every change is listed below. The complete diff is one link: **[v0.9.1 → this
+build](../../compare/upstream...main)** — the first commit in this repository is upstream
+v0.9.1 imported verbatim, so the comparison against it is exactly what PAI changes.
 
-| Option or environment variable | Purpose | Default |
-| --- | --- | --- |
-| `--help`, `-h` | Print startup options and exit | — |
-| `--port <port>`, `-p <port>`, or `PORT` | Server port | `30141` |
-| `--hostname <host>`, `-H <host>`, or `PI_WEB_HOSTNAME` | Bind hostname | `127.0.0.1` |
-| `--no-open` or `PI_WEB_NO_OPEN=1` | Do not open a browser automatically | Browser opens |
-| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
-| `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
-| `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
-| `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
+### Fixed
 
-For example:
+Upstream defects rather than preferences. Each was reproduced before it was patched, and
+each is better sent upstream than carried here.
 
-```bash
-pi-web --help
-pi-web -p 8080 -H 0.0.0.0 --no-open
-```
+- **A new session did not survive being left.** The workspace's last-open memory was not
+  cleared, so the next load restored the session that was open before it. Loading a bare
+  `/` ended at `?session=<the previous one>`. It matters most on a phone, where a
+  home-screen app is relaunched constantly.
+- **The first tap on a session row only produced a hover state,** revealing rename and
+  delete under the finger, so opening the session took a second tap.
+- **Hover painted into the inline style stuck after a touch.** iOS fires `mouseenter` and
+  often never `mouseleave`, so the tint stayed under the finger — including a blue flash
+  on whichever control the session dialog opened beneath.
+- **An expanded thinking block lost its collapse target,** leaving a 14×17 icon as the
+  only way back. It is 26×26 now, and 38×38 where the pointer is coarse.
+- **The model button omitted its provider,** although the dropdown already groups by
+  provider and the same model id can exist under two of them.
+- **A model that is no longer configured went on being named,** which reads as a working
+  selection. It now says "Select model".
+- **The keyboard's height was read once,** and WebKit reports a half-settled value on the
+  resize event itself. Read again as it settles, and polled.
+- **The home indicator's inset stayed reserved while the keyboard covered it.**
+- **A device kept the first build it ever cached.** The service worker named its cache
+  after the package version, which a patched build never moves. Each build gets its own.
+- **`/apple-touch-icon.png` was a 404** — the path Safari falls back to when adding to the
+  home screen, which is where a miss gets the generated letter tile instead of the mark.
+- **A tap in the terminal does not raise the keyboard on iOS.** iOS raises it when a focus
+  lands inside a user gesture, and xterm focuses its hidden textarea as soon as the
+  connection opens, long before a thumb arrives. Reproduced against stock v0.9.1.
+- **A terminal in an installed iOS web app never connects.** `connect()` returned on
+  `navigator.onLine` in silence — no error, no retry. A home-screen web app reports itself
+  offline while every other request on the page goes through.
 
-### Remote Access
+### Changed
 
-Binding to a non-loopback address exposes an agent that can execute high-privilege actions. On a trusted LAN, require a long random password:
+Most are confined to a phone by a width or a pointer query. Three are not, and are how
+this build looks on a desktop as well: Send's ground, the process group's frame, and the
+model list's group headers.
 
-```bash
-PI_WEB_PASSWORD='a-long-random-password' pi-web --hostname 0.0.0.0
-```
+- **The composer is one card,** with its controls on a row above the text line and Stop
+  coming out onto that row while a turn runs rather than staying inside a menu.
+- **Send is the app's own mark on a phone,** and keeps that dark ground without the mark
+  everywhere else, where upstream paints the stock accent.
+- **Every control on that row is 44pt to a thumb** without being drawn at 44 — a
+  transparent extender behind each one is what the browser hit-tests.
+- **The top bar floats over the transcript,** at 44pt, with the session name centred and
+  the context window drawn as a ring beside it. The session panel is a full dialog.
+- **The drawer takes 70% of the screen** and gives the session list the room: the file
+  explorer starts collapsed on a phone unless asked for.
+- **An empty new session stays centred, and drops onto the keyboard when one opens.**
+- **The model list is reachable by thumb,** hung off the button that opened it, its
+  provider headings without upstream's upper case.
+- **A turn's process details are one enclosed group,** the model named once at its header.
+- **The turn line says "cache read" rather than "cache R",** and how long the turn took.
+- **It is called PAI,** with its own mark and wordmark.
 
-Password authentication does not encrypt the connection. Do not expose Pi Web over plain HTTP to the internet; use HTTPS through a trusted reverse proxy or a trusted VPN. If a reverse proxy sends an external hostname, add that exact name to `PI_WEB_ALLOWED_HOSTS`. This allow-list does not change the address Pi Web binds to.
+### Added
 
-### HTTP Proxy
+- **Swipe a session row left for rename and delete.**
+- **Swipe in from the left edge to open the drawer** — installed app only, where that edge
+  is not already the browser's back gesture.
+- **Pull the transcript down to put the keyboard away.**
+- **A notice when the server has been rebuilt under an open page,** with a reload. An
+  installed web app resumes from memory rather than reloading.
+- **A way back to the latest message.**
+- **A way out of the exported history.**
 
-Server-side model and API requests honor the standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables.
+## Building from source
 
-On macOS or Linux:
-
-```bash
-HTTP_PROXY=http://127.0.0.1:7890 \
-HTTPS_PROXY=http://127.0.0.1:7890 \
-NO_PROXY=localhost,127.0.0.1 \
-npx @agegr/pi-web@latest
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:HTTP_PROXY = "http://127.0.0.1:7890"
-$env:HTTPS_PROXY = "http://127.0.0.1:7890"
-$env:NO_PROXY = "localhost,127.0.0.1"
-npx @agegr/pi-web@latest
-```
-
-## Notes
-
-- **Agent data**: Pi Web reads pi data from `~/.pi/agent` by default, including session files under `sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Set `PI_CODING_AGENT_DIR` to use another pi agent directory.
-- **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
-- **Shared configuration**: the Models panel uses pi's model, settings, and credential storage, so changes are visible to both interfaces.
-- **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
-- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, worktree creation, and removal behavior.
-
-### Downstream Session Context Menu
-
-Electron wrappers and other downstream integrations can provide a session-row
-context menu without patching `SessionSidebar`. Listen for the cancelable
-`pi-web:session-row-contextmenu` browser event and call `preventDefault()`
-synchronously when the integration will handle it:
-
-```js
-window.addEventListener("pi-web:session-row-contextmenu", (event) => {
-  event.preventDefault();
-  const { id, path, cwd, name, clientX, clientY, refresh } = event.detail;
-
-  void openSessionMenu({ id, path, cwd, name, clientX, clientY }).then((changed) => {
-    if (changed) refresh();
-  });
-});
-```
-
-The detail object contains `id`, `path`, `cwd`, optional `name`, pointer
-coordinates, and a `refresh()` callback for actions that change the session
-list. If no listener cancels the extension event, Pi Web preserves the
-browser's native context menu. This hook is browser-side and independent of
-Pi agent extensions.
-
-### Extension Session Liveness
-
-Server-side Pi extensions with detached work can prevent automatic idle
-session eviction through the versioned global registry:
-
-```js
-const liveness = globalThis[Symbol.for("@agegr/pi-web/session-liveness/v1")];
-const release = liveness?.version === 1
-  ? liveness.register({
-      name: "my-extension",
-      sessionId,
-      sessionFile: sessionFile || undefined,
-      isActive: () => detachedJobs.size > 0,
-    })
-  : () => {};
-```
-
-Register once per active extension session and call the returned idempotent
-`release` function on session shutdown, replacement, or reload. `isActive`
-must be synchronous, cheap, and scoped to the supplied exact session id or
-file. Provider errors fail safe by preserving that session. This lease only
-affects automatic idle eviction; explicit shutdown and Stop fallback cleanup
-still take precedence.
-
-## Development
-
-```bash
+```sh
 npm install
-npm run dev
+npm test        # upstream's suite, 1020 tests
+npm run build
+npm start
 ```
 
-The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
+## License and attribution
 
-```bash
-npm test
-node_modules/.bin/tsc --noEmit
-npm run lint
-```
+MIT, and a derivative work of **[pi-web](https://github.com/agegr/pi-web)** by **agegr**,
+whose copyright notice is reproduced in `LICENSE` as that license requires. The changes
+carried here are © 2026 Perturbation AI, under the same terms.
 
-Do not run `next build` or `npm run build` during normal development. It writes to `.next/` and can interfere with the development server; leave builds for release work.
+The agent underneath is **[pi](https://github.com/earendil-works/pi)**
+(`@earendil-works/pi-coding-agent`) by **Mario Zechner**, also MIT. It is a dependency
+rather than something this build changes, and it is named here because it is what does the
+work.
 
-Contributor guides: [Internationalization](./docs/i18n.md) and [Release process](./docs/release.md).
-
-## Repository Layout
-
-```text
-app/             Next.js UI and API routes
-components/      React UI components
-hooks/           Client state and interaction hooks
-lib/             Session, agent, model, file, Git, and security logic
-public/          Static assets and PWA files
-bin/             npm CLI entrypoint and launch option parsing
-docs/            Focused user and contributor guides
-```
-
-See [AGENTS.md](./AGENTS.md) for the architecture notes and detailed file map.
-
-## License
-
-[MIT](./LICENSE)
+Neither project endorses this one. PAI is not official, and carries none of their marks.

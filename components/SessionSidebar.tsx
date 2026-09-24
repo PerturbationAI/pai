@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, typ
 import type { SessionInfo } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
+import { isNarrowScreen } from "@/lib/pai-pointer";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
@@ -15,6 +16,9 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
+import { canHover } from "@/lib/pai-pointer";
+import { usePaiRowSwipe } from "@/lib/pai-row-swipe";
+import { paiRevealWhileEditing } from "@/lib/pai-reveal-editing";
 
 // Fixed row height for the session list. SessionItem renders at exactly this
 // height, so the list can be windowed (only the visible slice is mounted).
@@ -344,7 +348,7 @@ function PiWebTitle() {
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Pi Web";
+  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "PAI";
   const display = useScramble(target, scrambling);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -581,8 +585,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   // Browser storage is unavailable during server rendering. Restore the panel
   // preference after hydration so a collapsed explorer stays collapsed on reload.
+  // With nothing stored yet the answer depends on the screen: on a phone the
+  // explorer and the session list are two scrolling areas stacked in one
+  // drawer, and which one a finger moves depends on where it landed, so the
+  // list gets the whole drawer until the explorer is asked for. A preference,
+  // once set either way, is what wins from then on.
   useEffect(() => {
-    setExplorerOpen(loadExplorerOpen());
+    setExplorerOpen(loadExplorerOpen(undefined, !isNarrowScreen()));
   }, []);
 
   // Persist unread markers so they survive a browser refresh before the user
@@ -2161,7 +2170,8 @@ function SessionItem({
   useEffect(() => {
     if (renaming) {
       const id = requestAnimationFrame(() => inputRef.current?.select());
-      return () => cancelAnimationFrame(id);
+      const stopRevealing = paiRevealWhileEditing(inputRef);
+      return () => { cancelAnimationFrame(id); stopRevealing(); };
     }
   }, [renaming]);
 
@@ -2244,13 +2254,23 @@ function SessionItem({
     e.stopPropagation();
   }, [onRenamed, session.cwd, session.id, session.name, session.path]);
 
+  // A left swipe stands in for the hover a touch screen cannot produce, and
+  // drives upstream's own `hovered` so the gate below stays as upstream wrote it.
+  const swipe = usePaiRowSwipe({
+    onOpen: () => setHovered(true),
+    onClose: () => setHovered(false),
+    disabled: confirmDelete || renaming,
+  });
+
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   return (
     <div
       onClick={confirmDelete || renaming ? undefined : onClick}
       onContextMenu={confirmDelete || renaming ? undefined : handleContextMenu}
-      onMouseEnter={() => setHovered(true)}
+      className="pai-session-row" data-pai-swiped={hovered || undefined}
+      onMouseEnter={() => { if (canHover()) setHovered(true); }}
       onMouseLeave={() => { setHovered(false); }}
+      {...swipe}
       style={{
         height: SESSION_LIST_ITEM_HEIGHT,
         display: "flex",
@@ -2338,6 +2358,7 @@ function SessionItem({
       ) : (
         /* ── Normal view ── */
         <>
+          <div className="pai-row-content">
           {/* Subagent indicator for child sessions */}
           {depth > 0 && (
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -2411,9 +2432,10 @@ function SessionItem({
             </button>
           )}
 
+          </div>
           {/* Action buttons — shown on hover */}
           {hovered && !session.transient && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <div className="pai-row-actions" style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button
                 onClick={startRename}
                 title={t("sidebar.rename")}
