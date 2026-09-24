@@ -13,6 +13,16 @@ try {
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: configDir,
+  experimental: {
+    // proxy.ts matches /api/:path*, and Next buffers the request body whenever
+    // a proxy is present, capped at 10 MB by default. The upload route accepts
+    // up to 100 MB per request, so raise the buffer above that or large uploads
+    // are truncated and fail with "Failed to parse body as FormData."
+    proxyClientMaxBodySize: "128mb",
+  },
+  // next/image is only used for the static logo, so the /_next/image optimizer
+  // (and its sharp/libheif attack surface, see GHSA-2xp9-vwfh-vxw4) is not needed.
+  images: { unoptimized: true },
   serverExternalPackages: [
     "node-pty",
     "undici",
@@ -73,13 +83,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_PI_VERSION: piVersion,
-    // The service worker names its cache after whatever is in its own URL, and
-    // that has been the package version — which a patched build never moves.
-    // So anything precached (the icons, the offline page) is served from the
-    // first build that ever cached it, on every device that cached it, for
-    // good. A value that changes per production build gives each build its own
-    // cache, and the worker's activate handler drops the ones before it.
-    NEXT_PUBLIC_PAI_BUILD: process.env.NODE_ENV === "production" ? String(Date.now()) : "dev",
   },
 };
 

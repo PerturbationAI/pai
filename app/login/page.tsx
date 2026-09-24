@@ -3,10 +3,11 @@
 import Image from "next/image";
 import { useState, type FormEvent } from "react";
 import { I18nProvider, useI18n } from "@/hooks/useI18n";
+import { safeLoginDestination } from "@/lib/login-destination";
 
 function safeDestination(): string {
   const destination = new URLSearchParams(window.location.search).get("next");
-  return destination?.startsWith("/") && !destination.startsWith("//") ? destination : "/";
+  return safeLoginDestination(destination, window.location.origin);
 }
 
 function LoginForm() {
@@ -14,6 +15,13 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const failureMessage = async (response: Response): Promise<string> => {
+    if (response.status === 401) return t("auth.invalidPassword");
+    if (response.status !== 429) return t("auth.loginFailed");
+    const seconds = Number(response.headers.get("retry-after"));
+    return t("auth.tooManyAttempts", { seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 1 });
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -26,7 +34,7 @@ function LoginForm() {
         body: JSON.stringify({ password }),
       });
       if (!response.ok) {
-        setError(response.status === 401 ? t("auth.invalidPassword") : t("auth.loginFailed"));
+        setError(await failureMessage(response));
         return;
       }
       window.location.replace(safeDestination());
@@ -41,14 +49,9 @@ function LoginForm() {
     <main className="web-login-page">
       <div className="web-login-shell">
         <header className="web-login-brand">
-          {/* Unoptimized on purpose. The optimizer's URL is the same whichever icon
-              is behind it — `url`, `w` and `q` do not change when the file does — and
-              it answers with a four-hour Cache-Control, so a CDN holds the previous
-              icon at that URL for four hours after a new one ships. The raw file
-              answers with max-age=0 and revalidates. */}
-          <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority unoptimized />
+          <Image src="/icons/apple-touch-icon.png" width={52} height={52} alt="" priority />
           <div>
-            <h1 className="pai-wordmark">PAI</h1>
+            <h1>Pi Web</h1>
             <p>{t("auth.prompt")}</p>
           </div>
         </header>

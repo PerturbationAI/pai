@@ -10,10 +10,7 @@ export function PwaRegistration() {
 
     const register = () => {
       const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
-      const build = process.env.NEXT_PUBLIC_PAI_BUILD ?? "dev";
-      // Both, so the cache is still identifiable by version but changes when
-      // the build does.
-      const scriptUrl = `/sw.js?v=${encodeURIComponent(`${appVersion}-${build}`)}`;
+      const scriptUrl = `/sw.js?v=${encodeURIComponent(appVersion)}`;
 
       void navigator.serviceWorker.register(scriptUrl, {
         scope: "/",

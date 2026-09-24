@@ -7,7 +7,6 @@ import { promisify } from "util";
 import { fileURLToPath, pathToFileURL } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
-import { paiAddExportCloseControl } from "@/lib/pai-export-close";
 
 const execFileAsync = promisify(execFile);
 
@@ -263,7 +262,7 @@ export async function GET(
       await exportSession(filePath, outputPath);
 
       const html = readFileSync(outputPath, "utf8");
-      const patchedHtml = paiAddExportCloseControl(patchExportHtml(html));
+      const patchedHtml = patchExportHtml(html);
       return new Response(patchedHtml, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

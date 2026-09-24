@@ -5,7 +5,6 @@ import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./settings.css";
-import "./pai-overrides.css";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],
@@ -14,27 +13,21 @@ const notoSansMono = Noto_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PAI",
-  description: "A phone-first interface for the pi coding agent",
-  applicationName: "PAI",
+  title: "Pi Web",
+  description: "Pi Web interface for the pi coding agent",
+  applicationName: "Pi Web",
   manifest: "/manifest.webmanifest",
   icons: {
-    // The build stamp is here because Safari keeps a touch icon per site and
-    // will not refetch a URL it already has. Next fingerprints favicon.ico on
-    // its own but leaves these alone, so a changed mark reached the tab and
-    // never the home screen. An icon that already sits on a home screen is
-    // still fixed at the moment it was added -- nothing served can move it --
-    // but this is what lets the next install pick the change up.
     icon: [
       {
-        url: `/icons/icon-192.png?v=${process.env.NEXT_PUBLIC_PAI_BUILD ?? "dev"}`,
+        url: "/icons/icon-192.png",
         sizes: "192x192",
         type: "image/png",
       },
     ],
     apple: [
       {
-        url: `/icons/apple-touch-icon.png?v=${process.env.NEXT_PUBLIC_PAI_BUILD ?? "dev"}`,
+        url: "/icons/apple-touch-icon.png",
         sizes: "180x180",
         type: "image/png",
       },
@@ -43,7 +36,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "PAI",
+    title: "Pi Web",
   },
   formatDetection: {
     telephone: false,

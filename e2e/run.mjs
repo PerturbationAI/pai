@@ -2,13 +2,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 
@@ -22,12 +23,15 @@ const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
 const project = join(agentDir, "project");
 const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
+const previewFile = join(project, "preview.html");
+writeFileSync(previewFile, filePanelFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
 const BRANCH = "e2e-branch-session";
 const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
+const APPEND = "e2e-external-append-session";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -95,12 +99,15 @@ try {
   ];
   Object.assign(richEntries.at(-1).message, { provider: "test", model: "E2E Model" });
   writeSession(RICH, richEntries);
-  // The default 50-entry page starts at compaction, with its user prompt outside it.
+  // The default page is 50 *visible* messages (user / assistant / compaction).
+  // toolResults ride along free after #810, so 48 tool-call assistants + the
+  // final answer + the divider fill that window; the user prompt is the 51st
+  // visible entry and must stay outside the first page.
   const compactedEntries = [
     message("user", null, "user", "E2E prompt outside the compacted page"),
     { type: "compaction", id: "compact", parentId: "user", timestamp, summary: "E2E compaction anchor", firstKeptEntryId: "user", tokensBefore: 100 },
   ];
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 48; i++) {
     compactedEntries.push(message(`call${i}`, compactedEntries.at(-1).id, "assistant", [
       { type: "toolCall", id: `t${i}`, name: "bash", arguments: { command: `echo step${i}` } },
     ]));
@@ -108,12 +115,16 @@ try {
     Object.assign(result.message, { toolCallId: `t${i}`, toolName: "bash", isError: false });
     compactedEntries.push(result);
   }
-  compactedEntries.push(message("answer", "result23", "assistant", [{ type: "text", text:
+  compactedEntries.push(message("answer", "result47", "assistant", [{ type: "text", text:
     "E2E compacted answer paragraph.\n\n".repeat(20)
     + "## E2E compacted heading\n\n"
     + "E2E compacted answer paragraph.\n\n".repeat(20),
   }]));
   writeSession(COMPACTED, compactedEntries);
+  writeSession(APPEND, [
+    message("root", null, "user", "E2E wrapper root"),
+    message("reply", "root", "assistant", "E2E wrapper reply"),
+  ]);
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -137,6 +148,17 @@ try {
     return response.json();
   }
 
+  async function post(path, body) {
+    const response = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    assert.ok(response.ok, `POST ${path} -> ${response.status}`);
+    return response.json();
+  }
+
   const deadline = Date.now() + 120_000;
   while (true) {
     if (serverError) throw serverError;
@@ -144,7 +166,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -173,6 +195,28 @@ try {
   assert.equal(compacted.context.entryIds[0], "compact");
   assert.equal(compacted.context.messages.some((entry) => entry.role === "user"), false);
   console.log("PASS: bounded history, branch context, pagination root, and API errors");
+
+  // #632 regression: a live wrapper shadows the session file. Ordinary reads
+  // keep that snapshot (two processes writing one JSONL is unsupported). A
+  // mount/refresh GET (?force=1) must see the external append and stay stable.
+  {
+    const file = join(sessionDir, `2026-08-23T00-00-00-000Z_${APPEND}.jsonl`);
+    await post(`/api/agent/${APPEND}`, { type: "get_state" });
+    const beforeAppend = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(beforeAppend.context.entryIds, ["root", "reply"], "the wrapper must serve its own snapshot first");
+    appendFileSync(file, `${JSON.stringify(message("external", "reply", "assistant", "E2E external append"))}\n`);
+    const ordinaryRead = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(ordinaryRead.context.entryIds, ["root", "reply"], "post-turn reads must not probe disk");
+    assert.equal(ordinaryRead.wrapperRebuilt, undefined);
+    const afterForce = await api(`/api/sessions/${APPEND}?force=1`);
+    assert.deepEqual(afterForce.context.entryIds, ["root", "reply", "external"], "a mount/refresh read must see the external append");
+    assert.equal(afterForce.wrapperRebuilt, true);
+    const again = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(again.context.entryIds, ["root", "reply", "external"], "repeated reads must stay stable");
+    const appended = await api(`/api/sessions/${APPEND}/context?tail=1`);
+    assert.deepEqual(appended.context.entryIds, ["external"], "the appended entry must be readable on its own");
+    console.log("PASS: external session-file appends are visible on force/mount reads");
+  }
 
   browser = await chromium.launch();
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
@@ -246,9 +290,7 @@ try {
     await page.locator("strong").filter({ hasText: "E2E markdown" }).waitFor();
     await page.locator("pre").filter({ hasText: "console.log('E2E code');" }).waitFor();
     await page.getByText("E2E final answer", { exact: true }).waitFor();
-    // The group's line starts with the counts that differ between groups, not
-    // with the words "Process details", which said the same thing on every one.
-    const processDetails = page.getByRole("button", { name: /^\d+ message/ });
+    const processDetails = page.getByRole("button", { name: /^Process details/ });
     const thinking = page.getByRole("button", { name: /^Thinking/ });
     assert.equal(await processDetails.count(), 1);
     assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
@@ -258,9 +300,7 @@ try {
     assert.equal(thinkingRequests.length, 0);
     await processDetails.click();
     assert.equal(await thinking.count(), 3);
-    // A glyph says the thinking state -- a brain, or an exploding head while it
-    // is still being written -- and stands before the preview it labels.
-    assert.match(await thinking.last().innerText(), /E2E final reasoning$/);
+    assert.equal(await thinking.last().innerText(), "E2E final reasoning");
     assert.equal(thinkingRequests.length, 0);
     for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
       await thinking.nth(index).click();
@@ -318,7 +358,7 @@ try {
       const olderMessage = page.locator("[data-entry-id='e4920']");
       const olderOffset = await positionForReading(olderMessage);
       await selectSession("Render **E2E markdown**", "user");
-      const process = page.getByRole("button", { name: /^\d+ message/ });
+      const process = page.getByRole("button", { name: /process details/i });
       await process.click();
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);
@@ -356,6 +396,9 @@ try {
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await page.locator(".markdown-code-block pre").waitFor();
+    await checkFilePanel(page, previewFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });

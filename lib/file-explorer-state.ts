@@ -14,17 +14,12 @@ function getBrowserStorage(): StorageLike | null {
   }
 }
 
-export function loadExplorerOpen(
-  storage: StorageLike | null = getBrowserStorage(),
-  whenUnset = true,
-): boolean {
-  if (!storage) return whenUnset;
+export function loadExplorerOpen(storage: StorageLike | null = getBrowserStorage()): boolean {
+  if (!storage) return true;
   try {
-    const stored = storage.getItem(EXPLORER_OPEN_STORAGE_KEY);
-    if (stored === null) return whenUnset;
-    return stored !== "false";
+    return storage.getItem(EXPLORER_OPEN_STORAGE_KEY) !== "false";
   } catch {
-    return whenUnset;
+    return true;
   }
 }
 
